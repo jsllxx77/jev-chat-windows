@@ -243,7 +243,7 @@ if __name__ == "__main__":  # Windows 的 spawn 会让子进程重新执行本�
     else:
         capture_on.set()
         child = spawn_worker()
-    if not settings.has_jev_key():
+    if not settings.has_key():  # 判断就绪 + 起草有 key；缺哪个就弹设置页，否则免 Key 的判断会涥住这个入口
         ov.set_status("请先在设置中配置模型", "warning")
         ov.after(0, ov.open_settings)
     if settings.check_update() and update.parse_version(VERSION):  # 开发版没有版本号，不查也不烦源码用户

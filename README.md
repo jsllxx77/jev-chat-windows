@@ -30,15 +30,17 @@
 
 设置页的「模型」卡片分两节，各填一把 key：
 
-1. **判断 · Jev** —— 判断意图、紧张度，并给三条候选排序。来源选 **OpenRouter**（默认，key 在
-   [openrouter.ai](https://openrouter.ai/) 申请）或 **TypeSafe 直连**（key 在
-   [console.typesafe.ai](https://console.typesafe.ai/) 申请）。填的是哪家的 key 看你上面选了哪家。
+1. **判断 · Jev** —— 判断意图、紧张度，并给三条候选排序。默认来源 **classifier.dev**，
+   **不需要 key**，开箱即用（免费额度按出口 IP 算，所以别把它挂到代理上）。
+   要在 **OpenRouter**（key 在 [openrouter.ai](https://openrouter.ai/) 申请）、
+   **TypeSafe 直连**（key 在 [console.typesafe.ai](https://console.typesafe.ai/) 申请）之间加断时，
+   切到那个来源再填对应的 key。
 2. **起草 · 语言模型** —— 写那三条候选。默认 **DeepSeek 官网**直连，key 在
    [platform.deepseek.com](https://platform.deepseek.com/) 申请（很便宜，起草一次几厘钱）。
    换别家见下面的表，OpenAI / Anthropic / Gemini 三种接口都支持。
 3. 选「你们的关系」（恋人 / 朋友 / 同事 / 家人 / 自定义），保存。可以用了。
 
-两把 key 各管一节，互不相干；同一节里换来源要重填一次 key（只存这一把）。
+判断这节默认 classifier.dev，**不用填 key**；要换 OpenRouter / TypeSafe 才用到这一把。
 
 **为什么起草默认 DeepSeek 官网直连**
 
@@ -88,8 +90,8 @@ DeepSeek 官方 API（`api.deepseek.com`）国内直连，起草基本就是一�
 - **判断摘要**：建议动作、可能意图、对方可能需要、紧张度 0–9。
 - **采集开关**：标题栏一拨就停，WGC 会话一起停掉（Win10 的黄框跟着消失），已有候选不受影响。
 - **实时聊天记录**：底部展开，看 OCR 到底读出了什么，认错了一眼就能发现。
-- **两个模型都能换**：判断走 OpenRouter 或 TypeSafe 直连；起草有 11 家预设（默认 DeepSeek 官网），
-  OpenAI / Anthropic / Gemini 三种协议都支持，也能填自己的 Base URL。全程只要两把 key。
+- **两个模型都能换**：判断走 classifier.dev（默认，免 Key）/ OpenRouter / TypeSafe 直连；起草有 11 家预设（默认 DeepSeek 官网），
+  OpenAI / Anthropic / Gemini 三种协议都支持，也能填自己的 Base URL。最少只要起草那一把 key。
 - **思考模式开关**：默认关；开了模型先想再写，更斟酌但慢好几倍、贵一些。
 - **参考上下文条数**：3~30，默认 10，起草和判断都按它取最近 N 条。
 - **说话风格**：一句话描述自己的口吻，补在「照着你最近发的消息模仿」之上。
@@ -119,7 +121,8 @@ DeepSeek 官方 API（`api.deepseek.com`）国内直连，起草基本就是一�
   不夹带任何聊天内容；设置里「启动时检查更新」关掉就完全不发这个请求，源码直接跑（没有版本号）也
   不会发。
 
-什么会出网：判断（`JEV_API_KEY`）去你选的 OpenRouter 或 TypeSafe 直连；起草（`LLM_API_KEY`）发给你
+什么会出网：判断去你选的 classifier.dev（默认，免 Key）或 OpenRouter / TypeSafe 直连；
+起草（`LLM_API_KEY`）发给你
 在设置里选的那家接口（DeepSeek 官网、OpenRouter、OpenAI、Moonshot、智谱、通义、硅基流动、
 Anthropic、Gemini，或者自填的 OpenAI 兼容 / Anthropic 兼容地址），加上启动时（可关）一次到
 GitHub 查版本号。**本项目没有任何自建服务器**，聊天内容只在触发分析的那一刻，发给你自己在设置里
@@ -149,12 +152,18 @@ WGC 截微信窗口（GPU 合成窗口也能截，被遮挡也能截）
 
 ### 模型
 
-**判断 + 排序（key：`JEV_API_KEY`）**
+**判断 + 排序**
 
-| 来源 | 地址 | 默认模型 |
-| --- | --- | --- |
-| OpenRouter（默认） | `openrouter.ai/api/alpha/decisions` | `typesafe/jev-1.13` |
-| TypeSafe 直连 | `api.typesafe.ai`（官方 `typesafe-sdk`） | `jev-latest` |
+| 来源 | 地址 | 默认模型 | key |
+| --- | --- | --- | --- |
+| classifier.dev（默认） | `classifier.dev/v1/systemone` | `jev-latest` | 免 Key（匿名额度按出口 IP） |
+| OpenRouter | `openrouter.ai/api/alpha/decisions` | `typesafe/jev-1.13` | `JEV_API_KEY` |
+| TypeSafe 直连 | `api.typesafe.ai`（官方 `typesafe-sdk`） | `jev-latest` | `JEV_API_KEY` |
+
+三家给的是同一个 Jev，`classifier.dev` 跟 TypeSafe 的 System One 线协议完全一致。
+它的免费额度是**按出口 IP** 计的（约 3,000 次/分钟、20,000 次/天），机房/代理出口会被拒
+（`403 proxy_requires_payment`）——所以**别给 `classifier.dev` 挂代理**，直连家宽即可；
+被拒就切 OpenRouter / TypeSafe 直连，或填一个充值过的工作区 key。
 
 **起草 3 条候选（key：`LLM_API_KEY`）**
 
@@ -207,9 +216,8 @@ Jev 的判断喂给它，让它自己读对话；7 道判断题加一道「哪�
 - **Windows 10 1903+ 或 Windows 11**（Windows Graphics Capture 的最低要求）
 - **Python 3.10+**（Releases 里的 exe 是 CI 用 3.11 打的；只想用 exe 的话不用装 Python）
 - **微信 Windows 4.x**（`Weixin.exe`）
-- **两把 API key**：判断用 `JEV_API_KEY`，默认来源 [OpenRouter](https://openrouter.ai/)（或
-  [TypeSafe 直连](https://console.typesafe.ai/)）；起草用 `LLM_API_KEY`，默认
-  [DeepSeek 官网](https://platform.deepseek.com/)。详见下面「使用说明」
+- **API key**：判断默认 classifier.dev，免 Key；切到 OpenRouter / TypeSafe 直连时才需要，
+  填在 `JEV_API_KEY`。起草要 `LLM_API_KEY`，默认 [DeepSeek 官网](https://platform.deepseek.com/)。
 
 > Win10 上 WGC 会在微信窗口外画一圈黄框，系统不给关；Win11 才能关掉。
 > 嫌碍眼就把标题栏的采集开关拨到「已暂停」，黄框立刻消失。
@@ -257,8 +265,8 @@ pyinstaller --noconfirm --clean jev.spec
 | 参考上下文 | 起草和判断各看最近多少条消息，3~30 | `config.json` → `context`（默认 10） |
 | 群聊指定回复对象 | 开了群聊里才有「回复对象」那一行，候选针对 TA 写 | `config.json` → `reply_target`（默认关） |
 | 启动时检查更新 | 开了才在启动时查一次 GitHub 最新版本号，有新版本就在标题栏下面提示 | `config.json` → `check_update`（默认开） |
-| 判断 · 来源 | OpenRouter 还是 TypeSafe 直连 | `config.json` → `jev_provider`（默认 `openrouter`） |
-| 判断 · 密钥 | 上面选哪家就填哪家的 key。已配置时留空 = 保留 | 注册表 `HKCU\Environment` → `JEV_API_KEY` |
+| 判断 · 来源 | classifier.dev（免 Key）/ OpenRouter / TypeSafe 直连 | `config.json` → `jev_provider`（默认 `classifier`） |
+| 判断 · 密钥 | 只有 OpenRouter / TypeSafe 才要；classifier.dev 留空即可。已配置时留空 = 保留 | 注册表 `HKCU\Environment` → `JEV_API_KEY` |
 | 判断 · 模型 | 可手打，也可点「获取模型」拉列表挑 | `config.json` → `jev_model`（空 = 该来源默认） |
 | 起草 · 来源 | 上面那张表里的任意一家 | `config.json` → `draft_provider`（默认 `deepseek`） |
 | 起草 · Base URL | 只有两个「自定义」来源才出现这一行 | `config.json` → `draft_base_url` |

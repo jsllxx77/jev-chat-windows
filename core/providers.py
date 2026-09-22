@@ -11,6 +11,9 @@ from __future__ import annotations
 
 from collections import namedtuple
 
+CLASSIFIER_BASE = "https://classifier.dev"
+CLASSIFIER_SYSTEMONE = f"{CLASSIFIER_BASE}/v1/systemone"
+CLASSIFIER_MODELS = f"{CLASSIFIER_BASE}/v1/models"
 OPENROUTER_BASE = "https://openrouter.ai/api/v1"  # OpenAI 兼容，列模型走它
 # Jev 判断只有 OpenRouter 这条路要自己拼 HTTP：typesafe_sdk 把路径写死成 /v1/systemone，打不到这个地址
 OPENROUTER_DECISIONS = "https://openrouter.ai/api/alpha/decisions"
@@ -23,6 +26,7 @@ LEGACY = {JEV_ENV: "OPENROUTER_API_KEY", LLM_ENV: "DEEPSEEK_API_KEY"}
 
 _Jev = namedtuple("_Jev", "name default")
 JEV_PROVIDERS = {
+    "classifier": _Jev("classifier.dev（免Key）", "jev-latest"),
     "openrouter": _Jev("OpenRouter", "typesafe/jev-1.13"),
     "typesafe": _Jev("TypeSafe 直连", "jev-latest"),
 }
@@ -53,6 +57,8 @@ DRAFT_PROVIDERS = {  # 第一个就是默认：DeepSeek 官网直连
 
 # 这两个来源没有固定地址，设置页要多露一行 Base URL 出来
 CUSTOM = ("custom_openai", "custom_anthropic")
+# 这些来源不需要真 key（classifier.dev 的匿名额度按出口 IP 算），设置页不拦空密钥
+KEYLESS = ("classifier",)
 # 起草时认思考开关的来源，设置页那句提示照着这里写
 THINKING = ("DeepSeek", "OpenRouter", "Anthropic", "Gemini")
 # 所有可能存 key 的环境变量（新两把 + 两个老名字），脱敏时一次全过一遍（jev_client.redact_secrets）
@@ -66,6 +72,8 @@ if __name__ == "__main__":
                for key, p in DRAFT_PROVIDERS.items())
     assert all(not DRAFT_PROVIDERS[key].base for key in CUSTOM)
     assert next(iter(DRAFT_PROVIDERS)) == "deepseek"  # 默认就是列表第一个
+    assert next(iter(JEV_PROVIDERS)) == "classifier"  # 判断默认就是免 Key 那家
+    assert KEYLESS == ("classifier",) and all(k in JEV_PROVIDERS for k in KEYLESS)
     assert DRAFT_PROVIDERS["deepseek"].extra(True) == {"thinking": {"type": "enabled"}}
     assert DRAFT_PROVIDERS["deepseek"].extra(False) == {"thinking": {"type": "disabled"}}
     assert DRAFT_PROVIDERS["openrouter"].extra(True) == {"reasoning": {"enabled": True}}

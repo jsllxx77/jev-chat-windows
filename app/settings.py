@@ -12,14 +12,15 @@ import json
 import os
 import sys  # 只为下面这一处：打包后 __file__ 指向临时解包目录，config.json 得放在 exe 旁边才存得住
 
-from core.providers import CUSTOM, DRAFT_PROVIDERS, JEV_ENV, JEV_PROVIDERS, LEGACY, LLM_ENV
+from core.providers import (CUSTOM, DRAFT_PROVIDERS, JEV_ENV, JEV_PROVIDERS, KEYLESS, LEGACY,
+                            LLM_ENV)
 
 _ROOT = (os.path.dirname(sys.executable) if getattr(sys, "frozen", False)
          else os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _CONFIG = os.path.join(_ROOT, "config.json")
 _DEFAULT_RELATIONSHIP = "romantic partners"
 _DEFAULT_CONTEXT = 10
-_DEFAULT_JEV = "openrouter"
+_DEFAULT_JEV = "classifier"
 _DEFAULT_DRAFT = "deepseek"
 
 
@@ -48,7 +49,7 @@ def style() -> str:
     return str(_read("style") or "")
 
 def jev_provider() -> str:
-    """判断模型走哪家：openrouter（默认）或 typesafe 直连。"""
+    """判断模型走哪家：classifier（免 Key，默认）/ openrouter / typesafe 直连。"""
     v = _read("jev_provider")
     return v if v in JEV_PROVIDERS else _DEFAULT_JEV
 
@@ -121,7 +122,8 @@ def jev_key() -> str:
     return _get_key(JEV_ENV)
 
 def has_jev_key() -> bool:
-    return bool(jev_key())
+    """classifier.dev 的匿名额度不要 key，所以选了它就算配好了。"""
+    return bool(jev_key()) or jev_provider() in KEYLESS
 
 def llm_key() -> str:
     """起草那把 key，所有语言模型来源共用。"""
@@ -130,7 +132,11 @@ def llm_key() -> str:
 def has_llm_key() -> bool:
     return bool(llm_key())
 
-has_key = has_jev_key  # 旧名字：界面上「配没配好」问的就是判断模型这把 key
+def has_key() -> bool:
+    """界面上问的「配没配好」：判断那节就绪（classifier.dev 免 Key 也算就绪）**且**起草那把 key 有了。
+    只看判断那把用 has_jev_key()。起草没有 key 就写不出候选，所以两节齐了才算就绪——
+    否则首次启动不会弹设置页（判断免 Key 已经「就绪」），用户就永远填不上起草那把 key。"""
+    return has_jev_key() and has_llm_key()
 
 def save(relationship_text: str, context_n: int | None = None, *,
          jev_provider_text: str | None = None, jev_key_text: str | None = None,

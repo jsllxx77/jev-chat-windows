@@ -505,7 +505,7 @@ class Overlay:
         self._fetched.done.connect(self._models_fetched)
         self.jev = self._model_group(box, "判断 · Jev", "jev", providers.JEV_PROVIDERS)
         box.addWidget(self._hint(
-            "判断意图、紧张度，并给三条候选排序。两家给的是同一个 Jev，必填。"
+            "判断意图、紧张度，并给三条候选排序。三家给的是同一个 Jev；classifier.dev 免 Key，开箱即用。"
         ))
         self.draft = self._model_group(box, "起草 · 语言模型", "draft", providers.DRAFT_PROVIDERS)
         box.addWidget(self._hint(
@@ -583,7 +583,8 @@ class Overlay:
         group.keyEdit.returnPressed.connect(self._save)
         box.addWidget(group.keyEdit)
         box.addWidget(self._hint(
-            "OpenRouter 的 key 或 TypeSafe 的 key，看上面选的来源。" if kind == "jev"
+            "选 classifier.dev 就不用填 key；选 OpenRouter 或 TypeSafe 直连则填对应来源的 key。"
+            if kind == "jev"
             else "上面选哪家就填哪家的 key；换来源重填一次，只存这一把。"))
         model_label = _label("模型", 13)
         box.addWidget(model_label)
@@ -625,10 +626,12 @@ class Overlay:
         for group in (self.jev, self.draft):
             provider = self._provider_of(group)
             name = group.table[provider].name
+            keyless = provider in providers.KEYLESS
             configured = bool(group.stored_key())
-            group.keyState.setText("已配置" if configured else "未配置")
+            group.keyState.setText("免Key" if keyless else ("已配置" if configured else "未配置"))
             group.keyEdit.setPlaceholderText(
-                "已配置，留空保留" if configured else f"输入 {name} API 密钥")
+                "免Key，留空即可" if keyless
+                else ("已配置，留空保留" if configured else f"输入 {name} API 密钥"))
             if self._compact:
                 name = group.providerBox.fontMetrics().elidedText(name, Qt.ElideRight, 180)
             group.providerBox.setText(name)
@@ -642,7 +645,7 @@ class Overlay:
         custom = group.kind == "draft" and provider in providers.CUSTOM
         base = self.baseEdit.text().strip() if custom else None
         key = group.keyEdit.text().strip() or group.stored_key()
-        if not key:
+        if not key and provider not in providers.KEYLESS:
             group.status.setText("先填密钥")
             return
         if custom and not base:
@@ -725,7 +728,8 @@ class Overlay:
             return
         for group, provider in ((self.jev, jev_provider), (self.draft, draft_provider)):
             name = group.table[provider].name
-            if not group.keyEdit.text().strip() and not group.stored_key():
+            if (provider not in providers.KEYLESS
+                    and not group.keyEdit.text().strip() and not group.stored_key()):
                 self._settings_feedback(f"请先填写 {group.keyTitle} 的 API 密钥。", error=True)
                 group.keyEdit.setFocus()
                 return
@@ -769,7 +773,10 @@ class Overlay:
             self._load_settings()
         self.pages.setCurrentWidget(self.settingsPage)
         self.settingsButton.setEnabled(False)
-        (self.relationshipBox if settings.has_key() else self.jev.keyEdit).setFocus()
+        # 光标落在真正缺东西的那一格：判断免 Key 时缺的可能是起草那把，别定点到判断密钥上
+        missing = next((g for g in (self.jev, self.draft)
+                        if not g.stored_key() and self._provider_of(g) not in providers.KEYLESS), None)
+        (missing.keyEdit if missing else self.relationshipBox).setFocus()
 
     def _back_home(self):
         self.jev.keyEdit.clear()

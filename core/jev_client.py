@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
-"""Jev 判断 API 客户端：OpenRouter 或 TypeSafe 直连。
+"""Jev 判断 API 客户端：classifier.dev（免 Key）/ OpenRouter / TypeSafe 直连。
 
-TypeSafe 直连走官方 `typesafe_sdk`；OpenRouter 这条是唯一自己拼 HTTP 的路——
-SDK 把路径写死成 `/v1/systemone`，打不到 OpenRouter 的 `/api/alpha/decisions`。
-两条路返回同一个 dict 形状，engine 不关心跑的是哪条。key 只从环境变量读，绝不打进日志。
+三条路的请求体是同一份 `{model, state, questions}`：classifier.dev 跟 TypeSafe 的
+System One 线协议完全一致，所以 classifier 与 OpenRouter 两条走手写 urllib，
+TypeSafe 直连走官方 `typesafe_sdk`（它把路径写死成 /v1/systemone，打不到
+OpenRouter 的 /api/alpha/decisions）。三条路返回同一个 dict 形状，engine 不关心
+跑的是哪条。key 只从环境变量读，绝不打进日志。
 """
 
 from __future__ import annotations
@@ -17,11 +19,13 @@ import urllib.request
 from typing import NoReturn
 
 try:  # 当模块导入 / 当脚本直接跑 都能用
-    from .providers import (ENV_VARS, JEV_ENV, JEV_PROVIDERS, LEGACY, OPENROUTER_BASE,
-                            OPENROUTER_DECISIONS, TYPESAFE_BASE)
+    from .providers import (CLASSIFIER_MODELS, CLASSIFIER_SYSTEMONE, ENV_VARS, JEV_ENV,
+                            JEV_PROVIDERS, LEGACY, OPENROUTER_BASE, OPENROUTER_DECISIONS,
+                            TYPESAFE_BASE)
 except ImportError:
-    from providers import (ENV_VARS, JEV_ENV, JEV_PROVIDERS, LEGACY, OPENROUTER_BASE,
-                           OPENROUTER_DECISIONS, TYPESAFE_BASE)
+    from providers import (CLASSIFIER_MODELS, CLASSIFIER_SYSTEMONE, ENV_VARS, JEV_ENV,
+                           JEV_PROVIDERS, LEGACY, OPENROUTER_BASE, OPENROUTER_DECISIONS,
+                           TYPESAFE_BASE)
 
 MAX_RETRIES = 3
 
@@ -85,16 +89,26 @@ def _error_body(exc: urllib.error.HTTPError) -> str:
     return redact_secrets(raw)[:800]
 
 
+def _judge_key(provider: str) -> str:
+    """classifier.dev 匿名额度不需要真实 key；工作区 key 才使用 classifier_agent_ 前缀。"""
+    if provider == "classifier":
+        key = (os.environ.get(JEV_ENV) or "").strip()
+        return key if key.startswith("classifier_agent_") else "free"
+    return _api_key(JEV_ENV)
+
+
 def ask(state: dict, questions: dict, timeout: float = 20,
-        provider: str = "openrouter", model: str | None = None) -> dict:
+        provider: str = "classifier", model: str | None = None) -> dict:
     """问 Jev 一轮判断，返回 {"answers": {名字: 答案}, "usage": {...}}。
 
-    provider ∈ JEV_PROVIDERS（openrouter / typesafe 直连）；model=None 用该来源的默认模型。
-    两条路返回的 dict 形状一模一样，429/529 都会退避重试。绝不打印或写出 key。
+    provider ∈ JEV_PROVIDERS（classifier / openrouter / typesafe）；model=None 用默认模型。
+    三条路返回的 dict 形状一模一样，429/529 都会退避重试。绝不打印或写出 key。
     """
-    spec = JEV_PROVIDERS.get(provider) or JEV_PROVIDERS["openrouter"]
-    key = _api_key(JEV_ENV)  # 两家共用同一把 key，换来源不用重填
+    spec = JEV_PROVIDERS.get(provider) or JEV_PROVIDERS["classifier"]
+    key = _judge_key(provider)
     model = model or spec.default
+    if provider == "classifier":
+        return _ask_classifier(state, questions, key, model, timeout)
     if provider == "typesafe":
         return _ask_typesafe(state, questions, key, model, timeout)
     return _ask_openrouter(state, questions, key, model, timeout)
@@ -129,6 +143,53 @@ def _ask_typesafe(state: dict, questions: dict, key: str, model: str, timeout: f
         "usage": {"input_tokens": result.usage.input_tokens,
                   "output_tokens": result.usage.output_tokens},
     }
+
+
+def _ask_classifier(state: dict, questions: dict, key: str, model: str, timeout: float) -> dict:
+    """classifier.dev 与 TypeSafe System One wire-compatible；匿名额度使用占位 Bearer 值。"""
+    return _post_systemone(CLASSIFIER_SYSTEMONE, state, questions, key, model, timeout)
+
+
+def _post_systemone(url: str, state: dict, questions: dict, key: str,
+                    model: str, timeout: float) -> dict:
+    payload = json.dumps(
+        {"model": model, "state": state, "questions": questions},
+        ensure_ascii=False,
+    ).encode("utf-8")
+    last_status: int | None = None
+    last_body = ""
+    for attempt in range(MAX_RETRIES + 1):
+        req = urllib.request.Request(
+            url,
+            data=payload,
+            method="POST",
+            headers={
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json; charset=utf-8",
+                "Accept": "application/json",
+            },
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            last_status = exc.code
+            last_body = _error_body(exc)
+            if last_status in (429, 529) and attempt < MAX_RETRIES:
+                time.sleep(2**attempt)
+                continue
+            raise JevError(f"Jev HTTP {last_status}: {last_body}", last_status) from None
+        except (TimeoutError, socket.timeout):
+            if attempt < MAX_RETRIES:
+                time.sleep(2**attempt)
+                continue
+            raise JevError(f"Jev request timed out after {timeout}s") from None
+        except urllib.error.URLError as exc:
+            if attempt < MAX_RETRIES:
+                time.sleep(2**attempt)
+                continue
+            raise JevError(f"Jev request failed: {redact_secrets(getattr(exc, 'reason', exc))}") from None
+    raise JevError(f"Jev HTTP {last_status}: exhausted retries. {last_body}", last_status)
 
 
 def _ask_openrouter(state: dict, questions: dict, key: str, model: str, timeout: float) -> dict:
@@ -185,9 +246,17 @@ def _ask_openrouter(state: dict, questions: dict, key: str, model: str, timeout:
     )
 
 
-def list_models(provider: str, key: str, timeout: float = 10) -> list[str]:
+def list_models(provider: str, key: str = "", timeout: float = 10) -> list[str]:
     """某家能用的 Jev 模型 id，去重排序。失败抛 JevError（设置页直接显示这句话）。"""
+    if provider == "classifier":
+        try:
+            req = urllib.request.Request(CLASSIFIER_MODELS, headers={"Accept": "application/json"})
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return sorted({item["name"] for item in json.loads(resp.read()).get("models", [])})
+        except Exception as exc:
+            _fail(exc, "取模型列表")
     if provider == "typesafe":
+        key = key or _api_key(JEV_ENV)
         import typesafe_sdk
 
         try:
@@ -294,12 +363,33 @@ if __name__ == "__main__":
 
     def _fake_urlopen(req, timeout=None):
         seen["url"], seen["body"] = req.full_url, json.loads(req.data.decode("utf-8"))
+        seen["auth"] = req.get_header("Authorization")
         return io.BytesIO(json.dumps(body).encode("utf-8"))
 
     with patch.object(urllib.request, "urlopen", _fake_urlopen):
-        assert ask({"chat": {}}, questions) == body
+        assert ask({"chat": {}}, questions, provider="openrouter") == body
     assert seen["url"] == OPENROUTER_DECISIONS
+    assert seen["auth"] == "Bearer ts-key"  # 新名字在就用新的
     assert seen["body"]["model"] == "typesafe/jev-1.13" and seen["body"]["questions"] == questions
+
+    # classifier.dev：同一份 SystemOne 请求，打它自己的地址，而且不需要真 key
+    del os.environ[JEV_ENV]
+    with patch.object(urllib.request, "urlopen", _fake_urlopen):
+        assert ask({"chat": {}}, questions, provider="classifier") == body
+    assert seen["url"] == CLASSIFIER_SYSTEMONE
+    assert seen["auth"] == "Bearer free"  # 匿名占位值；没 key 也不报错
+    assert seen["body"]["model"] == "jev-latest"  # 用它自己的默认模型，不是 OpenRouter 的
+    assert _judge_key("classifier") == "free"
+
+    def _fake_models(req, timeout=None):
+        seen["url"] = req.full_url
+        return io.BytesIO(json.dumps({"models": [
+            {"name": "jev-preview"}, {"name": "jev-latest"}]}).encode("utf-8"))
+
+    with patch.object(urllib.request, "urlopen", _fake_models):
+        assert list_models("classifier") == ["jev-latest", "jev-preview"]  # 匿名列模型也不用 key
+    assert seen["url"] == CLASSIFIER_MODELS
+    os.environ[JEV_ENV] = "ts-key"  # 后面脱敏那条还要用
 
     with patch("llm.list_models" if __package__ is None else "core.llm.list_models",
                lambda *a, **k: ["openai/gpt-4o", "typesafe/jev-1.13", "typesafe/jev-preview"]):

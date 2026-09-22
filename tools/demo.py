@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 """端到端冒烟：截图里那段真实对话跑一遍完整链，打印判断 + 排好序的候选。
 
-全程只要两把 key：判断一把 JEV_API_KEY（OpenRouter 或 TypeSafe 的），起草一把 LLM_API_KEY。
+全程只要一把 key：起草的 LLM_API_KEY；判断走 classifier.dev，免 Key。
 
-    set JEV_API_KEY=...   &  set LLM_API_KEY=...    (Windows)
-    export JEV_API_KEY=... && export LLM_API_KEY=...(mac/Linux)
+    set LLM_API_KEY=...                            (Windows)
+    export LLM_API_KEY=...                         (mac/Linux)
     python tools/demo.py
 
-默认：判断走 OpenRouter，起草走 DeepSeek 官网直连。换别家改下面两个常量
+默认：判断走 classifier.dev（免 Key），起草走 DeepSeek 官网直连。换别家改下面两个常量
 （可选的来源见 core/providers.py 的两张表）。
 """
 from __future__ import annotations
@@ -29,7 +29,7 @@ MESSAGES = [
 ]
 RELATIONSHIP = "romantic partners"
 PROVIDER = "deepseek"        # 起草来源，见 core.providers.DRAFT_PROVIDERS
-JEV_PROVIDER = "openrouter"  # 判断来源：openrouter 或 typesafe
+JEV_PROVIDER = "classifier"  # 判断来源：classifier（免 Key）/ openrouter / typesafe
 
 
 def fmt(name: str, ans: dict) -> str:
